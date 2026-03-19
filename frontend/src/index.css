@@ -1,0 +1,71 @@
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background-color: #1e5a96;
+
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+}
+
+/* Container */
+.container {
+  text-align: center;
+}
+
+/* Title */
+.header {
+  color: white;
+  margin-bottom: 20px;
+  font-size: 28px;
+}
+
+/* Card */
+.form-box {
+  background: #f5f5f5;
+  width: 350px;   /* 🔥 reduced width */
+  padding: 25px;
+  border-radius: 8px;
+  box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+/* Labels */
+label {
+  display: block;
+  margin-top: 12px;
+  font-size: 14px;
+  text-align: left;
+}
+
+/* Inputs */
+input {
+  width: 100%;
+  padding: 8px;
+  margin-top: 5px;
+  border: 1px solid #ccc;
+  border-radius: 5px;
+}
+
+/* Button */
+button {
+  width: 100%;
+  margin-top: 18px;
+  padding: 10px;
+  background: #2e8b2e;
+  color: white;
+  border: none;
+  border-radius: 5px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #246f24;
+}
+
+/* Bottom text */
+.bottom-text {
+  margin-top: 12px;
+  font-size: 13px;
+}
