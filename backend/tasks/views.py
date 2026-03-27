@@ -1,98 +1,110 @@
-from rest_framework import viewsets, permissions, status
+from rest_framework import viewsets, permissions
 from rest_framework.response import Response
 from rest_framework.decorators import action
 from .models import Task, Submission
 from .serializers import TaskSerializer, SubmissionSerializer
+from django.db.models import Count
+from django.utils import timezone
+from datetime import timedelta
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.views import APIView
+import google.generativeai as genai
+import os
+import json
 
-class AdminOnlyPermission(permissions.BasePermission):
+genai.configure(api_key=os.environ.get('GEMINI_API_KEY', ''))
+
+class IsAdminOrReadOnly(permissions.BasePermission):
     def has_permission(self, request, view):
-        return request.user.is_authenticated and request.user.role == 'Admin'
+        if request.method in permissions.SAFE_METHODS:
+            return True
+        return request.user.role == 'Admin'
 
 class TaskViewSet(viewsets.ModelViewSet):
+    permission_classes = [permissions.IsAuthenticated, IsAdminOrReadOnly]
     serializer_class = TaskSerializer
-
-    def get_permissions(self):
-        if self.action in ['create', 'update', 'partial_update', 'destroy']:
-            return [AdminOnlyPermission()]
-        return [permissions.IsAuthenticated()]
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def get_queryset(self):
-        if self.request.user.role == 'Admin':
-            return Task.objects.all().order_by('-created_at')
-        return Task.objects.all().order_by('-deadline')
+        return Task.objects.all().order_by('-created_at')
 
     def perform_create(self, serializer):
         serializer.save(created_by=self.request.user)
 
 class SubmissionViewSet(viewsets.ModelViewSet):
-    serializer_class = SubmissionSerializer
     permission_classes = [permissions.IsAuthenticated]
+    serializer_class = SubmissionSerializer
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
 
     def get_queryset(self):
         if self.request.user.role == 'Admin':
             return Submission.objects.all().order_by('-submitted_at')
         return Submission.objects.filter(user=self.request.user).order_by('-submitted_at')
 
-    def create(self, request, *args, **kwargs):
-        task_id = request.data.get('task')
-        content = request.data.get('content')
-        if not task_id:
-            return Response({"error": "Task ID is required."}, status=status.HTTP_400_BAD_REQUEST)
-        
-        try:
-            task = Task.objects.get(id=task_id)
-        except Task.DoesNotExist:
-            return Response({"error": "Task not found."}, status=status.HTTP_404_NOT_FOUND)
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
-        submission, created = Submission.objects.get_or_create(
-            task=task,
-            user=request.user,
-            defaults={'content': content, 'status': 'Submitted'}
-        )
-        if not created:
-            submission.content = content
-            submission.status = 'Submitted'
-            submission.save()
-
-        serializer = self.get_serializer(submission)
-        return Response(serializer.data, status=status.HTTP_201_CREATED)
-
-    @action(detail=True, methods=['put'], permission_classes=[AdminOnlyPermission])
+    @action(detail=True, methods=['put'], permission_classes=[IsAdminOrReadOnly])
     def review(self, request, pk=None):
         submission = self.get_object()
-        new_status = request.data.get('status')
-        if new_status in dict(Submission.STATUS_CHOICES):
-            submission.status = new_status
+        status = request.data.get('status')
+        if status in ['Pending', 'Submitted', 'Reviewed']:
+            submission.status = status
             submission.save()
-            return Response(self.get_serializer(submission).data)
-        return Response({"error": "Invalid status."}, status=status.HTTP_400_BAD_REQUEST)
+            return Response({'status': 'Status updated'})
+        return Response({'error': 'Invalid status'}, status=400)
 
-from rest_framework.views import APIView
+    @action(detail=True, methods=['post'], permission_classes=[IsAdminOrReadOnly])
+    def evaluate(self, request, pk=None):
+        submission = self.get_object()
+        task = submission.task
+        api_key = os.environ.get('GEMINI_API_KEY')
+        if not api_key:
+            return Response({'error': 'Gemini API Key not configured in environment variables.'}, status=500)
+            
+        prompt = f"""
+        You are an expert Talent Evaluator AI.
+        Evaluate this user's submission against the task instructions.
+        
+        TASK TITLE: {task.title}
+        TASK DESCRIPTION: {task.description}
+        
+        USER SUBMISSION CONTENT:
+        {submission.content}
+        
+        Provide a JSON response strictly exactly matching this format with no markdown wrappers:
+        {{
+            "score": 85,
+            "feedback": "Detailed constructive feedback here...",
+            "recommended_status": "Reviewed"
+        }}
+        """
+        try:
+            model = genai.GenerativeModel('gemini-2.5-flash')
+            response = model.generate_content(prompt)
+            cleaned_json = response.text.replace('```json', '').replace('```', '').strip()
+            return Response({'ai_evaluation': json.loads(cleaned_json)})
+        except Exception as e:
+            return Response({'error': str(e)}, status=500)
 
 class DashboardStatsView(APIView):
     permission_classes = [permissions.IsAuthenticated]
-
+    
     def get(self, request):
         if request.user.role == 'Admin':
             total_tasks = Task.objects.count()
-            total_subs = Submission.objects.count()
-            completed = Submission.objects.filter(status='Reviewed').count()
-            pending = total_subs - completed
-            rate = (completed / total_subs * 100) if total_subs > 0 else 0
-            return Response({
-                "total_tasks": total_tasks,
-                "completed_tasks": completed,
-                "pending_tasks": pending,
-                "completion_rate": round(rate, 2)
-            })
+            completed_tasks = Submission.objects.filter(status='Reviewed').count()
+            pending_tasks = Submission.objects.filter(status='Submitted').count()
         else:
-            total_assigned = Task.objects.count()
-            my_subs = Submission.objects.filter(user=request.user).count()
-            completed = Submission.objects.filter(user=request.user, status='Reviewed').count()
-            rate = (completed / total_assigned * 100) if total_assigned > 0 else 0
-            return Response({
-                "total_tasks": total_assigned,
-                "completed_tasks": completed,
-                "pending_tasks": total_assigned - completed,
-                "completion_rate": round(rate, 2)
-            })
+            total_tasks = Task.objects.count()
+            completed_tasks = Submission.objects.filter(user=request.user, status='Reviewed').count()
+            pending_tasks = Submission.objects.filter(user=request.user, status='Submitted').count()
+            
+        completion_rate = round((completed_tasks / total_tasks * 100)) if total_tasks > 0 else 0
+        
+        return Response({
+            'total_tasks': total_tasks,
+            'completed_tasks': completed_tasks,
+            'pending_tasks': pending_tasks,
+            'completion_rate': completion_rate
+        })

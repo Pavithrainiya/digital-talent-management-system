@@ -8,6 +8,8 @@ import LandingPage from './pages/LandingPage';
 import ProtectedRoute from './components/ProtectedRoute';
 import AdminDashboard from './pages/AdminDashboard';
 import UserDashboard from './pages/UserDashboard';
+import Profile from './pages/Profile';
+import TaskDetail from './pages/TaskDetail';
 import { AuthContext } from './context/AuthContext';
 import { useContext } from 'react';
 
@@ -30,6 +32,8 @@ function App() {
           {/* Protected Routes */}
           <Route element={<ProtectedRoute />}>
              <Route path="/dashboard" element={<DashboardRouter />} />
+             <Route path="/profile" element={<Profile />} />
+             <Route path="/tasks/:id" element={<TaskDetail />} />
           </Route>
           
           <Route path="*" element={<Navigate to="/" replace />} />

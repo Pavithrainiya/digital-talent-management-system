@@ -1,11 +1,13 @@
 import { useState, useEffect, useContext, useMemo } from 'react';
 import { AuthContext } from '../context/AuthContext';
+import { Link, useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
-import { Search, Filter, Clock, CheckCircle, AlertCircle, PlusCircle, Trash2, Calendar, Edit } from 'lucide-react';
+import { Search, Filter, Clock, CheckCircle, AlertCircle, PlusCircle, Trash2, Calendar, Edit, Save, X, LayoutDashboard, Users, Settings, Menu, Sparkles, Upload } from 'lucide-react';
 
 export default function AdminDashboard() {
   const { user, logout } = useContext(AuthContext);
+  const navigate = useNavigate();
   const [stats, setStats] = useState({ total_tasks: 0, completed_tasks: 0, pending_tasks: 0, completion_rate: 0 });
   const [tasks, setTasks] = useState([]);
   const [submissions, setSubmissions] = useState([]);
@@ -17,6 +19,9 @@ export default function AdminDashboard() {
   const [subFilter, setSubFilter] = useState('All');
   
   const [newTask, setNewTask] = useState({ title: '', description: '', deadline: '' });
+  const [taskAttachment, setTaskAttachment] = useState(null);
+  
+  const [editingTask, setEditingTask] = useState(null);
 
   useEffect(() => {
     fetchData();
@@ -42,9 +47,20 @@ export default function AdminDashboard() {
   const handleCreateTask = async (e) => {
     e.preventDefault();
     try {
-      await api.post('/tasks/tasks/', newTask);
+      const formData = new FormData();
+      formData.append('title', newTask.title);
+      formData.append('description', newTask.description);
+      formData.append('deadline', newTask.deadline);
+      if (taskAttachment) {
+        formData.append('attachment', taskAttachment);
+      }
+
+      await api.post('/tasks/tasks/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
       toast.success('Task broadcasted to users successfully!');
       setNewTask({ title: '', description: '', deadline: '' });
+      setTaskAttachment(null);
       fetchData();
     } catch (err) {
       toast.error('Failed to create task');
@@ -54,7 +70,7 @@ export default function AdminDashboard() {
   const handleDeleteTask = async (id) => {
     if(!window.confirm("Are you sure you want to permanently delete this task?")) return;
     try {
-      await api.delete(\`/tasks/tasks/\${id}/\`);
+      await api.delete(`/tasks/tasks/${id}/`);
       toast.success('Task safely removed');
       fetchData();
     } catch (err) {
@@ -62,13 +78,41 @@ export default function AdminDashboard() {
     }
   };
 
+  const handleUpdateTask = async (e) => {
+    e.preventDefault();
+    try {
+      // NOTE: For simplicity we send JSON for updates in this specific view.
+      // If we wanted to update attachments here we'd use FormData.
+      await api.put(`/tasks/tasks/${editingTask.id}/`, editingTask);
+      toast.success('Task successfully updated!');
+      setEditingTask(null);
+      fetchData();
+    } catch (err) {
+      toast.error('Failed to update task. Ensure deadline is correctly formatted.');
+    }
+  };
+
   const handleReview = async (id, status) => {
     try {
-      await api.put(\`/tasks/submissions/\${id}/review/\`, { status });
-      toast.success(\`Submission marked as \${status}\`);
+      await api.put(`/tasks/submissions/${id}/review/`, { status });
+      toast.success(`Submission marked as ${status}`);
       fetchData();
     } catch (err) {
       toast.error('Failed to update submission');
+    }
+  };
+
+  const handleAIEvaluate = async (id) => {
+    const toastId = toast.loading('Gemini AI is analyzing context...');
+    try {
+      const res = await api.post(`/tasks/submissions/${id}/evaluate/`);
+      toast.dismiss(toastId);
+      const aiData = res.data.ai_evaluation;
+      toast.success(`AI Confidence: ${aiData.score}/100.`);
+      alert(`🤖 Gemini Evaluation Feedback:\n\nScore: ${aiData.score}/100\nRecommended Action: ${aiData.recommended_status}\n\nFeedback:\n${aiData.feedback}`);
+    } catch (err) {
+      toast.dismiss(toastId);
+      toast.error('Gemini API evaluation failed. Check environment configuration.');
     }
   };
 
@@ -123,9 +167,18 @@ export default function AdminDashboard() {
           </div>
          </div>
         <nav className="flex-1 mt-6 px-4 space-y-2">
-           <div className="px-4 py-3 bg-indigo-500/10 text-indigo-400 rounded-xl font-bold shadow-sm border border-indigo-500/20 flex items-center gap-2 transition-all">
-             <AlertCircle size={18} /> Command Center
-           </div>
+           <button className="w-full px-4 py-3 bg-indigo-500/10 text-indigo-400 rounded-xl font-bold shadow-sm border border-indigo-500/20 flex items-center gap-3 transition-all">
+             <LayoutDashboard size={18} /> Command Center
+           </button>
+           <button className="w-full px-4 py-3 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-xl font-bold border border-transparent flex items-center gap-3 transition-all">
+             <Users size={18} /> Team Members
+           </button>
+           <button className="w-full px-4 py-3 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-xl font-bold border border-transparent flex items-center gap-3 transition-all">
+             <CheckCircle size={18} /> Audit Logs
+           </button>
+           <Link to="/profile" className="w-full px-4 py-3 text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 rounded-xl font-bold border border-transparent flex items-center gap-3 transition-all mt-6">
+             <Settings size={18} /> System Profile
+           </Link>
         </nav>
         <div className="p-4 border-t border-slate-800 bg-slate-950/20">
           <button onClick={logout} className="w-full text-left px-4 py-3 text-slate-400 font-bold hover:bg-slate-800 hover:text-rose-400 rounded-xl transition-all border border-transparent hover:border-rose-500/30">
@@ -136,9 +189,16 @@ export default function AdminDashboard() {
 
       {/* Main Content */}
       <main className="flex-1 p-4 sm:p-8 overflow-y-auto w-full mx-auto">
+        
+        {/* Mobile Header Navbar */}
         <div className="mb-6 flex justify-between items-center lg:hidden bg-slate-900 p-4 rounded-xl shadow-lg border border-slate-800">
-          <h2 className="text-xl font-black text-white flex items-center gap-2"><div className="w-6 h-6 bg-indigo-500 rounded flex items-center justify-center">D</div> DTMS</h2>
-          <button onClick={logout} className="text-rose-400 font-bold text-sm">Logout</button>
+          <div className="flex items-center gap-3">
+             <button className="text-slate-400 hover:text-indigo-400"><Menu size={24}/></button>
+             <h2 className="text-xl font-black text-white flex items-center gap-2">
+                <div className="w-6 h-6 bg-indigo-500 rounded flex items-center justify-center text-xs">D</div> DTMS
+             </h2>
+           </div>
+          <button onClick={logout} className="text-rose-400 font-bold text-sm bg-rose-500/10 px-4 py-2 rounded-lg border border-rose-500/20">Logout</button>
         </div>
 
         <div className="mb-8 animate-fade-in flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -183,15 +243,19 @@ export default function AdminDashboard() {
              <div className="p-2 bg-indigo-50 rounded-lg text-indigo-600"><PlusCircle size={20}/></div>
              <h3 className="text-xl font-black text-slate-800">Broadcast New Task</h3>
           </div>
-          <form onSubmit={handleCreateTask} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-start">
+          <form onSubmit={handleCreateTask} className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
             <div className="md:col-span-3">
               <input type="text" placeholder="Task Title" required className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-shadow font-medium" value={newTask.title} onChange={e => setNewTask({...newTask, title: e.target.value})} />
             </div>
-            <div className="md:col-span-5">
+            <div className="md:col-span-4">
               <input type="text" placeholder="Detailed Description" required className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-shadow font-medium" value={newTask.description} onChange={e => setNewTask({...newTask, description: e.target.value})} />
             </div>
             <div className="md:col-span-2">
               <input type="datetime-local" required className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none transition-shadow text-sm text-slate-600 font-bold" value={newTask.deadline} onChange={e => setNewTask({...newTask, deadline: e.target.value})} />
+            </div>
+            <div className="md:col-span-1 border border-slate-200 rounded-xl overflow-hidden relative cursor-pointer hover:bg-slate-50 flex items-center justify-center p-3 text-slate-500">
+              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={e => setTaskAttachment(e.target.files[0])} title="Attach Context File (PDF, Video, Docs)" />
+              <Upload size={20} className={taskAttachment ? "text-indigo-600" : ""} />
             </div>
             <div className="md:col-span-2">
               <button type="submit" className="w-full bg-indigo-600 text-white font-bold p-3 rounded-xl hover:bg-indigo-700 hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2">
@@ -199,12 +263,13 @@ export default function AdminDashboard() {
               </button>
             </div>
           </form>
+          {taskAttachment && <p className="text-xs text-indigo-600 font-black mt-2">File Attached: {taskAttachment.name}</p>}
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
           
           {/* Active Broadcasts (Tasks) */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[600px]">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-[600px] h-full">
             <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50">
               <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><Calendar size={20} className="text-indigo-500"/> Active Broadcasts</h3>
               <div className="relative w-full sm:w-auto">
@@ -217,15 +282,21 @@ export default function AdminDashboard() {
                 <li key={t.id} className="p-4 hover:bg-slate-50 rounded-xl transition-colors group select-none">
                   <div className="flex justify-between items-start gap-4">
                     <div className="flex-1">
-                      <h4 className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors mb-1">{t.title}</h4>
+                      <h4 onClick={() => navigate(`/tasks/${t.id}`)} className="font-bold text-slate-900 group-hover:text-indigo-600 transition-colors mb-1 cursor-pointer">{t.title}</h4>
                       <p className="text-xs font-semibold text-slate-500 mb-2 truncate max-w-md">{t.description}</p>
                       <div className="flex items-center gap-4 text-xs font-bold text-slate-400">
                          <span>Due: {new Date(t.deadline).toLocaleDateString([], {month:'short', day:'numeric'})} at {new Date(t.deadline).toLocaleTimeString([], {hour:'2-digit', minute:'2-digit'})}</span>
+                         {t.attachment && <span className="text-indigo-400">Includes Attachment</span>}
                       </div>
                     </div>
-                    <button onClick={() => handleDeleteTask(t.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Revoke Task">
-                      <Trash2 size={18} />
-                    </button>
+                    <div className="flex gap-2">
+                      <button onClick={() => setEditingTask({...t, deadline: t.deadline.slice(0, 16)})} className="p-2 text-slate-300 hover:text-indigo-500 hover:bg-indigo-50 rounded-lg transition-colors" title="Edit Task">
+                        <Edit size={18} />
+                      </button>
+                      <button onClick={() => handleDeleteTask(t.id)} className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors" title="Revoke Task">
+                        <Trash2 size={18} />
+                      </button>
+                    </div>
                   </div>
                 </li>
               ))}
@@ -239,7 +310,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* User Submissions Audit */}
-          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col h-[600px]">
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 flex flex-col min-h-[600px] h-full">
             <div className="p-6 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-slate-50/50">
               <h3 className="text-lg font-black text-slate-800 flex items-center gap-2"><CheckCircle size={20} className="text-emerald-500"/> Audit Submissions</h3>
               <div className="flex gap-2 w-full sm:w-auto">
@@ -264,21 +335,29 @@ export default function AdminDashboard() {
                          {s.user_details?.name.charAt(0)}
                        </div>
                        <span className="font-black text-slate-800">{s.user_details?.name}</span>
+                       <span className="text-xs font-bold text-slate-400 bg-slate-200/50 px-2 py-0.5 rounded truncate max-w-[150px]">{s.task_details?.title}</span>
                     </div>
-                    <span className={\`text-[10px] uppercase tracking-widest font-black px-2 py-1 rounded-md border \${s.status === 'Reviewed' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-600 border-amber-200'}\`}>
+                    <span className={`text-[10px] uppercase tracking-widest font-black px-2 py-1 rounded-md border ${s.status === 'Reviewed' ? 'bg-emerald-50 text-emerald-600 border-emerald-200' : 'bg-amber-50 text-amber-600 border-amber-200'}`}>
                       {s.status === 'Reviewed' ? 'Verified' : 'Review Required'}
                     </span>
                   </div>
                   
-                  <div className="bg-slate-50 p-3 rounded-lg border border-slate-100 mb-3 ml-10">
-                    <p className="text-xs font-bold text-slate-400 uppercase mb-1">Target Node: {s.task_details?.title}</p>
-                    <p className="text-sm font-medium text-slate-700">{s.content}</p>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 mb-3 ml-10">
+                    <p className="text-sm font-medium text-slate-700 mb-2">{s.content || "No text provided."}</p>
+                    {s.attachment && (
+                      <a href={s.attachment} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 text-xs font-black text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded-lg hover:bg-indigo-100 transition-colors">
+                        View Attached Document
+                      </a>
+                    )}
                   </div>
 
                   {s.status === 'Submitted' && (
-                    <div className="flex justify-end mt-2">
-                      <button onClick={() => handleReview(s.id, 'Reviewed')} className="bg-emerald-500 text-white font-bold px-4 py-2 rounded-lg text-xs hover:bg-emerald-600 hover:shadow-md transition-all flex items-center gap-2">
-                         <CheckCircle size={14} /> Approve Submission
+                    <div className="flex justify-end mt-2 gap-2">
+                      <button onClick={() => handleAIEvaluate(s.id)} className="bg-slate-900 text-slate-100 font-bold px-4 py-2 rounded-lg text-xs hover:bg-slate-800 shadow-md transition-all flex items-center gap-2">
+                         <Sparkles size={14} className="text-amber-300"/> Smart AI Evaluate
+                      </button>
+                      <button onClick={() => handleReview(s.id, 'Reviewed')} className="bg-emerald-500 text-white font-bold px-4 py-2 rounded-lg text-xs hover:bg-emerald-600 shadow-md transition-all flex items-center gap-2">
+                         <CheckCircle size={14} /> Approve Manually
                       </button>
                     </div>
                   )}
@@ -295,8 +374,46 @@ export default function AdminDashboard() {
 
         </div>
       </main>
+
+      {/* Edit Task Modal */}
+      {editingTask && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-2xl p-6 md:p-8 max-w-lg w-full shadow-2xl border border-slate-100">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-black text-slate-900">Modify Task</h3>
+              <button onClick={() => setEditingTask(null)} className="text-slate-400 hover:text-slate-600 bg-slate-100 hover:bg-slate-200 p-2 rounded-full transition-colors">
+                <X size={20} />
+              </button>
+            </div>
+            
+            <form onSubmit={handleUpdateTask} className="space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Task Title</label>
+                <input type="text" required className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium" 
+                       value={editingTask.title} onChange={e => setEditingTask({...editingTask, title: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Description</label>
+                <textarea required className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl focus:ring-2 focus:ring-indigo-500 font-medium min-h-[100px]" 
+                          value={editingTask.description} onChange={e => setEditingTask({...editingTask, description: e.target.value})} />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-slate-700 mb-1">Deadline</label>
+                <input type="datetime-local" required className="w-full bg-slate-50 border border-slate-200 p-3 rounded-xl focus:ring-2 focus:ring-indigo-500 text-sm font-bold text-slate-600" 
+                       value={editingTask.deadline} onChange={e => setEditingTask({...editingTask, deadline: e.target.value})} />
+              </div>
+              <div className="flex justify-end gap-3 mt-6">
+                <button type="button" onClick={() => setEditingTask(null)} className="px-5 py-2.5 text-slate-600 font-bold hover:bg-slate-100 rounded-xl transition-colors">Cancel</button>
+                <button type="submit" className="px-5 py-2.5 bg-indigo-600 text-white font-bold rounded-xl hover:bg-indigo-700 shadow-md transition-all flex items-center gap-2">
+                  <Save size={16} /> Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
       
-      <style dangerouslySetInnerHTML={{__html: \`
+      <style dangerouslySetInnerHTML={{__html: `
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(10px); }
           to { opacity: 1; transform: translateY(0); }
@@ -304,7 +421,7 @@ export default function AdminDashboard() {
         .animate-fade-in {
           animation: fadeIn 0.4s ease-out forwards;
         }
-      \`}} />
+      `}} />
     </div>
   );
 }
