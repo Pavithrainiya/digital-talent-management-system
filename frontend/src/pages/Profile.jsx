@@ -3,7 +3,7 @@ import { AuthContext } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
-import { ArrowLeft, User, Mail, Award, Edit3, Save, Phone, FileText, Download, Upload, ExternalLink } from 'lucide-react';
+import { ArrowLeft, User, Mail, Award, Edit3, Save, Phone, FileText, Download, Upload, ExternalLink, Briefcase, CheckCircle } from 'lucide-react';
 
 export default function Profile() {
   const { user: authUser, checkAuth } = useContext(AuthContext);
