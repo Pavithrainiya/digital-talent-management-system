@@ -3,12 +3,12 @@ import { AuthContext } from '../context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 import api from '../api/axios';
 import toast from 'react-hot-toast';
-import { ArrowLeft, User, Mail, Award, Edit3, Save, Phone, FileText, Download, Upload, ExternalLink, Briefcase, CheckCircle } from 'lucide-react';
+import { ArrowLeft, User, Mail, Award, Edit3, Save, Phone, FileText, Download, Upload, ExternalLink, Briefcase, CheckCircle, Globe } from 'lucide-react';
 
 export default function Profile() {
   const { user: authUser, checkAuth } = useContext(AuthContext);
   const navigate = useNavigate();
-  const [profile, setProfile] = useState({ name: '', email: '', role: '', bio: '', skills: '', phone_number: '', experience: '', resume: null });
+  const [profile, setProfile] = useState({ name: '', email: '', role: '', bio: '', skills: '', phone_number: '', country: '', experience: '', resume: null });
   const [resumeFile, setResumeFile] = useState(null);
   const [isEditing, setIsEditing] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -27,6 +27,7 @@ export default function Profile() {
         bio: res.data.bio || '',
         skills: res.data.skills || '',
         phone_number: res.data.phone_number || '',
+        country: res.data.country || '',
         experience: res.data.experience || '',
         resume: res.data.resume || null
       });
@@ -45,6 +46,7 @@ export default function Profile() {
       formData.append('bio', profile.bio);
       formData.append('skills', profile.skills);
       formData.append('phone_number', profile.phone_number);
+      formData.append('country', profile.country);
       formData.append('experience', profile.experience);
       if (resumeFile) {
         formData.append('resume', resumeFile);
@@ -64,8 +66,8 @@ export default function Profile() {
 
   const exportCSV = () => {
     const csvContent = [
-      ["Name", "Email", "Role", "Phone", "Skills", "Experience", "Bio"],
-      [profile.name, profile.email, profile.role, profile.phone_number, `"${profile.skills}"`, `"${profile.experience}"`, `"${profile.bio}"`]
+      ["Name", "Email", "Role", "Phone", "Country", "Skills", "Experience", "Bio"],
+      [profile.name, profile.email, profile.role, profile.phone_number, profile.country, `"${profile.skills}"`, `"${profile.experience}"`, `"${profile.bio}"`]
     ].map(e => e.join(",")).join("\n");
     
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -125,7 +127,10 @@ export default function Profile() {
                     <h1 className="text-4xl font-black text-slate-900 mb-2">{profile.name}</h1>
                     <div className="flex flex-col gap-2 mt-4 text-slate-500 font-medium">
                        <p className="flex items-center gap-3"><Mail size={16} className="text-indigo-400"/> {profile.email}</p>
-                       <p className="flex items-center gap-3"><Phone size={16} className="text-indigo-400"/> {profile.phone_number || 'No phone number provided'}</p>
+                       <div className="flex items-center gap-6">
+                          <p className="flex items-center gap-3"><Phone size={16} className="text-indigo-400"/> {profile.phone_number || 'No phone number'}</p>
+                          <p className="flex items-center gap-2"><Globe size={16} className="text-indigo-400"/> {profile.country || 'No country given'}</p>
+                       </div>
                     </div>
                  </div>
                  <div className="flex flex-col items-end gap-3">
@@ -191,6 +196,10 @@ export default function Profile() {
                    <div>
                      <label className="block text-sm font-bold text-slate-700 mb-2">Phone Number</label>
                      <input type="text" className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-medium bg-white" value={profile.phone_number} onChange={e => setProfile({...profile, phone_number: e.target.value})} placeholder="+1 (555) 000-0000" />
+                   </div>
+                   <div>
+                     <label className="block text-sm font-bold text-slate-700 mb-2">Country</label>
+                     <input type="text" className="w-full p-4 rounded-xl border border-slate-200 focus:ring-2 focus:ring-indigo-500 outline-none font-medium bg-white" value={profile.country} onChange={e => setProfile({...profile, country: e.target.value})} placeholder="United States" />
                    </div>
                    
                    <div className="md:col-span-2">
